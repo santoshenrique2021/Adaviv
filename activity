@@ -1,0 +1,372 @@
+---
+title: |
+  <center> ![](adaviv.JPG){width=4in} <center> 
+  Analytics Exercise
+author: Henrique Zaidan
+output: pdf_document
+fontsize: 12pt
+geometry: margin=1in
+---
+
+\par
+
+\noindent
+
+\rule{\textwidth}{0.4pt}
+
+```{r, include=FALSE}
+#Packages
+library(tidyverse)    
+library(ggthemes)
+library(lubridate)
+library(skimr)
+```
+
+<!--Glossary of definitions: -->
+
+<!--1 - Date: date where the issues were highlighted -->
+
+<!--2 - Week: week of the year when the issues were highlighted -->
+
+<!--3 - Room: Room where the issues were found -->
+
+<!--4 - Crop Week: week of the crop cycle when the issues were found -->
+
+<!--5 - Cultivar: Type of cultivar were the issues were found -->
+
+<!--6 - Issue: Type of plant health issue (e.g. botrytis, nutrient deficiency, etc) -->
+
+<!--7 - Colored Severity: How severe is the highlighted problem (green = not an issue, or issue resolved; yellow = mild; orange = moderate; red = severe) -->
+
+<!--8 - Number of plants: how many plants were flagged with this problem -->
+
+```{r, include=FALSE}
+#Original data
+df<- as_tibble(read.csv("dataset.csv")) 
+```
+
+```{r, include=FALSE}
+#Data wrangling - Data type
+
+#Type Casting - Set Date as a date-time variable
+df<- df |> mutate(Date = as.Date(Date)) 
+##First and last dates 
+list(min(df$Date), max(df$Date))
+
+#Rename levels from coloredSeverity
+##See the levels
+levels(factor(df$coloredSeverity))
+##Rename the levels
+df<- df |> mutate(coloredSeverity = fct_recode(as.factor(coloredSeverity), Green = "1.Green", Yellow = "2.Yellow", Orange = "3.Orange", 
+Red ="4.Red"))
+##Check
+levels(factor(df$coloredSeverity))
+
+#Set Number.of.plants..SUM. as a numerical variable
+df<- df |> mutate(Number.of.plants..SUM. = as.numeric(Number.of.plants..SUM.))
+
+#Set Week as a char variable
+df<- df |> mutate(Week = as.character(Week))
+
+#Set Room as a char variable
+df<- df |> mutate(Room = as.character(Room))
+
+#Set Crop.Week as a char variable
+df<- df |> mutate(Crop.Week = as.character(Crop.Week))
+```
+
+```{r, include=FALSE}
+#Data wrangling - Rename columns
+#Column names
+df |> names()
+
+#Rename coloredSeverity to Color
+names(df)[names(df) == 'coloredSeverity'] <- 'Color'
+#Rename Number.of.plants..SUM. to N_plants
+names(df)[names(df) == 'Number.of.plants..SUM.'] <- 'N_plants'
+#Rename Crop.Week to Crop_week
+names(df)[names(df) == 'Crop.Week'] <- 'Crop_week'
+```
+
+```{r, include=FALSE}
+#Feature Engineering
+df <- df |> mutate (Year = format(Date, "%Y")) |> 
+  mutate(FLAG_PLANT = if_else(df$N_plants==0,0,1)) |> 
+  mutate (Month = format(Date, "%m")) |> 
+  mutate(Year_Month = paste(Year, Month, sep =""))
+```
+
+```{r, include=FALSE}
+#Plants with health problems
+df_ill = df |> filter(FLAG_PLANT == 1)
+##Summary statistics
+skim(df_ill$N_plants) #Percentile 75 - 7
+df_ill |> filter(N_plants > 7) |> count() #8777 issues with more seven palnts with health problems
+```
+
+
+```{r, include=FALSE}
+#Critical Issue
+
+#10 and more plants with problems - Color analysis
+df_ill |> filter(N_plants >= 10) |> group_by(Color) |> summarise(n = n()) |> mutate(freq = round(100* n/sum(n),2)) |> arrange(desc(freq))
+
+#1800 plants affected for issue 
+df_ill |> filter(N_plants == 1800)  |> view()
+
+```
+
+# Assumptions
+
+Two assumptions were proposed along with this document:
+
+1.  Each row represents an issue;
+
+2.  The report focused on plants flagged with health problems because they are costly to the client. As a result, solving this problem increases the client's ROI.
+
+# 1 - Overview
+
+```{=tex}
+\begin{center}
+\begin{tabular}{ l| c}
+\hline
+\textbf{Period}  & November, 2021 - January, 2023\\
+\textbf{Issues} & 232,652\\ 
+\textbf{Plants with health problems} & 505,005\\
+ \hline
+\end{tabular}
+\end{center}
+```
+
+
+```{r, include=FALSE}
+#Analytics
+##Issues with plants affected - Part 1
+mean(df$N_plants)   #2.17 for each issue
+sum(c(df$N_plants)) #505005 total plants affected
+
+##Issues with plants affected - Part 2
+#Proportion
+df |> group_by(FLAG_PLANT) |> 
+ summarise(n = n()) |> mutate(freq = round(100* n/sum(n),2)) #15% of the issues present at least one plant affected.
+
+```
+
+-   15% of the issues showed at least one plant with health problems.
+
+```{r, include=FALSE}
+#Plants affected grouped by month
+df_month_ill<- df_ill |> group_by(Year_Month) |> summarise(Plantas = sum(N_plants))
+df_month_ill<- df_month_ill |> mutate(
+  Date = seq (as.Date("2021-12-01"),as.Date("2023-01-01"),by = "month")
+)
+```
+
+## Critical scenario
+
+Based on the data, five features are associated with plants with health problems (more frequency):
+
+```{=tex}
+\begin{center}
+\begin{tabular}{ l| c}
+\hline
+\textbf{Room}  & 7, 8\\
+\textbf{Croop week} & 8, 9, 10\\ 
+\textbf{Cultivar} & PE, HCC, ZMNTS, HG\\
+\textbf{Colored severity} & Yellow\\
+\textbf{Issue} & Viral anomaly, Nutrient Def\\
+ \hline
+\end{tabular}
+\end{center}
+```
+
+
+
+# 2 - Problem Statement
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE, fig.height = 3.0}
+ggplot()+
+xlab('Month') +
+scale_x_date(date_labels = "%b %Y")+
+ylab('Plants with health problems') +
+labs(title = "Plants with health problems", subtitle = "December 2021 - January 2023")+
+geom_line(data = df_month_ill, aes(x = Date, y = Plantas), color = "darkblue", linewidth =0.85)+
+geom_text(data = df_month_ill, aes  (x= Date, y = Plantas, label = Plantas),hjust=-0.2, vjust=-0.1, size=1.7)+  
+scale_x_date(date_labels = "%b %Y")+ 
+theme_stata()+  
+theme(text = element_text(size=8), plot.title = element_text(face = "bold", size = 9))
+```
+
+Based on the plot above, it is possible to see that June was the month with more plants with health problems. The reason for that is associated with four points:
+
+1.  **Issue** - Viral anomaly;
+
+2.  **Cultivar** - PE;
+
+3.  **Colored Severity** - Yellow;
+
+4.  **Room** - 8.
+
+This problem started in the middle of May and extended until the end of June. From July, the frequency of plants with issues decreased considerably. Finally, comparing the first and second semesters, the second one presented a lower frequency of ill plants.
+
+The average of plants with health problems per month was `r format(round(sum(c(df_ill$N_plants))/14,0), scientific=FALSE) `.
+
+## Room
+
+**Rooms 7 and 8 concentrated 53% of the plants with health problems**. In total, there are eight types of rooms.
+
+```{r, include=FALSE}
+#Room vs Plants with problems
+df_ill |> group_by(Room) |> summarise(n = sum(N_plants)) |> 
+  mutate(freq = round(100* n/sum(n),2)) |> 
+  arrange(desc(freq))
+```
+
+```{r, include=FALSE}
+#Room frequency
+room_ill<- data.frame(
+  room  = c("8", "7", "4", "3", "Others"),
+  freq = c(28.31, 24.33, 13.77, 10.68, 22.91))
+```
+
+```{r, echo=FALSE,  fig.height=3.0, warning=FALSE}
+room_ill %>% ggplot(aes (x = factor(room), y = freq, fill = room))+
+geom_col(width=0.5)+
+geom_text(aes(label=freq), vjust=1.6, color="white", size=3.5)+
+labs(x="Room", y="% Frequency", title = "Percentage frequency of plants with health problems per room")+
+theme_stata()+  
+theme(text = element_text(size=8), plot.title = element_text(face = "bold", size = 9))+
+ theme(legend.position="none")   
+```
+
+## Crop Week
+
+```{r, include=FALSE}
+#Crop Week vs Plants with problems
+df_ill |> group_by(Crop_week) |>  summarise(n = sum(N_plants)) |> 
+  mutate(freq = round(100* n/sum(n),2)) |> 
+  arrange(desc(freq))
+```
+
+**Between the harvest weeks 5 and 11, the frequency of plants with health problems was 92%**. Weeks 8, 9, and 10 present a higher frequency than others. These three concentrated around 50% of ill plants. In total, there are 13 crop weeks.
+
+## Cultivar
+
+```{r, include=FALSE}
+#Cultivar vs Plants with problems
+df_ill |> group_by(Cultivar) |> summarise(n = sum(N_plants)) |> 
+  mutate(freq = round(100* n/sum(n),2)) |> 
+  arrange(desc(freq))
+```
+
+
+
+**Four types of cultivars concentrated 59% of plants with health problems** - PE, HCC, ZMNTS, and HG. In total, there are 52 types of cultivars.
+
+```{r, include=FALSE}
+#Cultivar frequency
+cultivar_ill<- data.frame(
+  cultivar  = c("PE", "HCC", "ZMNTS", "HG", "Others"),
+  freq = c(22.16, 15.81, 11.11, 9.77, 41.15))
+```
+
+```{r, echo=FALSE,  fig.height=3.0, warning=FALSE}
+cultivar_ill %>% ggplot(aes (x = factor(cultivar), y = freq, fill = cultivar))+
+geom_col(width=0.5)+
+geom_text(aes(label=freq), vjust=1.6, color="white", size=3.5)+
+labs(x="Cultivar", y="% Frequency", title = "Percentage frequency of plants with health problems per cultivar")+
+theme_stata()+  
+theme(text = element_text(size=8), plot.title = element_text(face = "bold", size = 9))+
+ theme(legend.position="none") 
+```
+
+## Colored Severity
+
+**Yellow was the color present in 74% of the plants with health problems**. In total, there are 4 types of colored severity.
+
+
+```{r, include=FALSE}
+#Color vs Plants with problems
+df_ill |> group_by(Color) |> summarise(n = sum(N_plants)) |> 
+  mutate(freq = round(100* n/sum(n),2)) |> 
+  arrange(desc(freq))
+```
+
+
+```{r, include=FALSE}
+#Color frequency
+color_ill<- data.frame(
+  color  = c("Yellow", "Green", "Red", "Orange"),
+  prop = c(.7383, .1136, .0880, .0602))
+mycols <- c("darkolivegreen2","orange1", "firebrick1", "gold1")
+```
+
+```{r, include=FALSE}
+color_ill <- color_ill %>%
+  arrange(desc(color)) %>%
+  mutate(lab.ypos = cumsum(prop) - 0.5*prop) 
+```
+
+```{r,  fig.height=3.0, warning=FALSE, echo=FALSE}
+  ggplot(color_ill, aes(x = 2, y = prop, fill = color)) +
+  geom_bar(stat = "identity", color = "white") +
+  coord_polar(theta = "y", start = 0)+
+  geom_text(aes(y = lab.ypos, label =  scales::percent(prop, accuracy = .1)), color = "black")+
+  theme_void()+
+  scale_fill_manual(values = mycols)+
+  theme(text = element_text(size=8), plot.title = element_text(face =  "bold"))+  
+  xlim(0.5, 2.5)+labs(title = "Percentage of plants with health problems per colored severity")
+```
+
+## Issue
+
+
+```{r, include=FALSE}
+#Issue vs Plants with problems
+df_ill |> group_by(Issue) |> summarise(n = sum(N_plants)) |> 
+  mutate(freq = round(100* n/sum(n),2)) |> 
+  arrange(desc(freq))
+```
+
+```{r, include=FALSE}
+#Issue frequency
+issue_ill<- data.frame(
+  issue  = c("Viral anomaly", "Nutrient Def", "Light Burn", "Dead FP", "Others"),
+  freq = c(29.59, 23.53, 8.30, 6.48, 32.10))
+```
+
+**Four types of issues concentrated 68% of the plants with health problems** - Viral anomaly, Nutrient Def, Light Burn, and Dead FP. In total, there are 40 types of them.
+
+```{r, echo=FALSE,  fig.height=3.0, warning=FALSE}
+issue_ill %>% ggplot(aes (x = factor(issue), y = freq, fill = issue))+
+geom_col(width=0.5)+
+geom_text(aes(label=freq), vjust=1.6, color="white", size=3.5)+
+labs(x="Issue", y="% Frequency", title = "Percentage frequency of plants with health problems per issue")+
+theme_stata()+  
+theme(text = element_text(size=8), plot.title = element_text(face = "bold", size = 9))+
+ theme(legend.position="none") 
+```
+
+* **Note** - Comparing the variable week and plants with health problems did not show a pattern. Thus, the chronological timeline did not reflect a trend -a higher (or lower) quantity of plants with health problems along with time.
+
+
+```{r, include=FALSE}
+#Exploratory data analysis
+#Week vs Plants with problems
+df_ill |> group_by(Week) |> summarise(n = sum(N_plants)) |> 
+  mutate(freq = round(100* n/sum(n),2)) |> 
+  arrange(desc(freq))
+```
+
+# 3 - Recommendations
+
+The problem statement focused on the find a pattern related to the plants with health problems. The main idea is to check which attributes affect the ill plants more. In broad words, some levels of the features Room, Crop week, Cultivar, Colored severity, and Issue concentrated more ill plants.
+
+## Strategy 1
+
+It is possible to develop a machine-learning model of the classification to check if a plant can be healthy or not. Thus, if the probability is higher than the threshold, the plant can be classified as ill, and treatment is applied.
+
+## Strategy 2
+
+A contingency plan can be designed considering the levels of the features of the critical scenario. An action plan for the crop week can be planned, for example. The highest frequency of the plants with health problems was concentrated in the middle of the cycle. Therefore, the monitoring can be done considering weeks between 8 and 10. Another action is checking rooms 7 and 8 to know because more plants are ill.
+
